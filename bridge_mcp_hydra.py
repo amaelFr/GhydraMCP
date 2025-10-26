@@ -1557,6 +1557,39 @@ def functions_get_variables(name: str = None, address: str = None, port: int = N
     response = safe_get(port, endpoint)
     return simplify_response(response)
 
+# Type tools
+@mcp.tool()
+def datatypes_add(category_path: str, c_data_type: str, port: int = None) -> dict:
+    """Create a new data type from C type definition
+
+    Args:
+        category_path: Category path where to add the data type (e.g., "/MyTypes")
+        c_data_type: C-style data type definition (e.g., "struct MyStruct { int field1; char field2[10]; };")
+        port: Specific Ghidra instance port (optional)
+
+    Returns:
+        dict: Operation result with the created data type information
+    """
+    if not c_data_type:
+        return {
+            "success": False,
+            "error": {
+                "code": "MISSING_PARAMETER",
+                "message": "cDataType parameter is required"
+            },
+            "timestamp": int(time.time() * 1000)
+        }
+
+    port = _get_instance_port(port)
+
+    payload = {
+        "categoryPath": category_path,
+        "cDataType": c_data_type
+    }
+
+    response = safe_post(port, "datatypes/add", payload)
+    return simplify_response(response)
+
 # Memory tools
 @mcp.tool()
 def memory_read(address: str, length: int = 16, format: str = "hex", port: int = None) -> dict:
