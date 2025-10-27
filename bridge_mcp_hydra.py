@@ -1559,6 +1559,159 @@ def functions_get_variables(name: str = None, address: str = None, port: int = N
 
 # Type tools
 @mcp.tool()
+def datatypes_list(offset: int = 0, limit: int = 100,
+                  name_contains: str = None,
+                  name_matches_regex: str = None,
+                  description_contains: str = None,
+                  description_matches_regex: str = None,
+                  category_contains: str = None,
+                  category_matches_regex: str = None,
+                  category: str = None, type: str = None,
+                  exclude_pointers: bool = True,
+                  port: int = None) -> dict:
+    """List data types with filtering and pagination
+    
+    Args:
+        offset: Pagination offset (default: 0)
+        limit: Maximum items to return (default: 100)
+        name_contains: Substring to match in data type names (case-insensitive)
+        name_matches_regex: Regex pattern to match data type names (case-sensitive)
+        description_contains: Substring to match in descriptions (case-insensitive)
+        description_matches_regex: Regex pattern to match descriptions (case-sensitive)
+        category_contains: Substring to match in category paths (case-insensitive)
+        category_matches_regex: Regex pattern to match category paths (case-sensitive)
+        category: Exact category path filter (e.g., "/MyTypes") (case-insensitive)
+        type: Filter by type - "struct", "enum", "pointer", "union", "typedef", "array", "function", "builtin"
+        exclude_pointers: Exclude pointer types when their base type is present (default: True)
+        port: Specific Ghidra instance port (optional)
+        
+    Returns:
+        dict: List of data types with pagination information
+    """
+    port = _get_instance_port(port)
+    
+    params = {
+        "offset": offset,
+        "limit": limit
+    }
+    
+    if name_contains:
+        params["name_contains"] = name_contains
+    if name_matches_regex:
+        params["name_matches_regex"] = name_matches_regex
+    if description_contains:
+        params["description_contains"] = description_contains
+    if description_matches_regex:
+        params["description_matches_regex"] = description_matches_regex
+    if category_contains:
+        params["category_contains"] = category_contains
+    if category_matches_regex:
+        params["category_matches_regex"] = category_matches_regex
+    if category:
+        params["category"] = category
+    if type:
+        params["type"] = type
+    if exclude_pointers:
+        params["exclude_pointers"] = "true"
+
+    response = safe_get(port, "datatypes", params)
+    simplified = simplify_response(response)
+    
+    # Ensure we maintain pagination metadata
+    if isinstance(simplified, dict) and "error" not in simplified:
+        simplified.setdefault("size", len(simplified.get("result", [])))
+        simplified.setdefault("offset", offset)
+        simplified.setdefault("limit", limit)
+    
+    return simplified
+
+@mcp.tool()
+def datatypes_by_path(path_name: str, port: int = None) -> dict:
+    """Get detailed information about a data type by its full path name
+    
+    Args:
+        path_name: Full path name of the data type (e.g., "/MyTypes/MyStruct")
+        port: Specific Ghidra instance port (optional)
+        
+    Returns:
+        dict: Detailed data type information
+    """
+    if not path_name:
+        return {
+            "success": False,
+            "error": {
+                "code": "MISSING_PARAMETER",
+                "message": "path_name parameter is required"
+            },
+            "timestamp": int(time.time() * 1000)
+        }
+    
+    port = _get_instance_port(port)
+    
+    endpoint = f"datatypes/by-path/{quote(path_name, safe='')}"
+    
+    response = safe_get(port, endpoint)
+    return simplify_response(response)
+
+@mcp.tool()
+def datatypes_by_name(name: str, port: int = None) -> dict:
+    """Get detailed information about a data type by name
+    
+    Note: Multiple data types with the same name in different categories may exist.
+    
+    Args:
+        name: Data type name
+        port: Specific Ghidra instance port (optional)
+        
+    Returns:
+        dict: Detailed data type information (or list if multiple matches found)
+    """
+    if not name:
+        return {
+            "success": False,
+            "error": {
+                "code": "MISSING_PARAMETER",
+                "message": "name parameter is required"
+            },
+            "timestamp": int(time.time() * 1000)
+        }
+    
+    port = _get_instance_port(port)
+    
+    endpoint = f"datatypes/by-name/{quote(name)}"
+    
+    response = safe_get(port, endpoint)
+    return simplify_response(response)
+
+@mcp.tool()
+def datatypes_by_id(id: str, port: int = None) -> dict:
+    """Get detailed information about a data type by its universal ID
+    
+    Args:
+        id: Universal ID of the data type (numeric string)
+        port: Specific Ghidra instance port (optional)
+        
+    Returns:
+        dict: Detailed data type information
+    """
+    if not id:
+        return {
+            "success": False,
+            "error": {
+                "code": "MISSING_PARAMETER",
+                "message": "id parameter is required"
+            },
+            "timestamp": int(time.time() * 1000)
+        }
+    
+    port = _get_instance_port(port)
+    
+    endpoint = f"datatypes/by-id/{id}"
+    
+    response = safe_get(port, endpoint)
+    return simplify_response(response)
+
+@mcp.tool()
 def datatypes_add(category_path: str, c_data_type: str, port: int = None) -> dict:
     """Create a new data type from C type definition
 
@@ -1575,7 +1728,7 @@ def datatypes_add(category_path: str, c_data_type: str, port: int = None) -> dic
             "success": False,
             "error": {
                 "code": "MISSING_PARAMETER",
-                "message": "cDataType parameter is required"
+                "message": "c_data_type parameter is required"
             },
             "timestamp": int(time.time() * 1000)
         }
@@ -1587,7 +1740,39 @@ def datatypes_add(category_path: str, c_data_type: str, port: int = None) -> dic
         "cDataType": c_data_type
     }
 
-    response = safe_post(port, "datatypes/add", payload)
+    response = safe_post(port, "datatypes", payload)
+    return simplify_response(response)
+
+@mcp.tool()
+def datatypes_update(category_path: str, c_data_type: str, port: int = None) -> dict:
+    """Update or replace an existing data type from C type definition the data type name to update is place in c structure definition like normally
+
+    Args:
+        category_path: Category path where to update the data type (e.g., "/MyTypes")
+        c_data_type: C-style data type definition (e.g., "struct MyStruct { int field1; char field2[10]; };")
+        port: Specific Ghidra instance port (optional)
+
+    Returns:
+        dict: Operation result with the updated data type information
+    """
+    if not c_data_type:
+        return {
+            "success": False,
+            "error": {
+                "code": "MISSING_PARAMETER",
+                "message": "c_data_type parameter is required"
+            },
+            "timestamp": int(time.time() * 1000)
+        }
+
+    port = _get_instance_port(port)
+
+    payload = {
+        "categoryPath": category_path,
+        "cDataType": c_data_type
+    }
+
+    response = safe_put(port, "datatypes", payload)
     return simplify_response(response)
 
 # Memory tools
